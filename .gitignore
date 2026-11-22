@@ -1,0 +1,18 @@
+# nothing here is needed to build: the entry is main.ts and solve.js, and the standard library.
+node_modules/
+package-lock.json
+
+# local runs and grades
+out/
+output/
+answers.json
+scores/
+*.cpuprofile
+*.heapsnapshot
+*.log
+
+# editors and platforms
+.DS_Store
+.idea/
+.vscode/
+*.swp
