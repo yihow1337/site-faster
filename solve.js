@@ -36,7 +36,8 @@ const ESC_BULK = 64;
  * `text` with & < > " and ' escaped, and nothing else. A long text is escaped one character at a time only for the
  * first pass that finds nothing to do: the rest is five tests and a pass a character that is there, every one of them
  * a built-in's own loop. The two orders agree because & is replaced first, and nothing an entity holds is replaced
- * after it.
+ * after it. The first pass is the regexp engine's, not a loop over the table: a call into it was measured against a
+ * scan of even the shortest text esc is given, and it wins.
  */
 function esc(s) {
   const at = s.search(ESC_FIND);
@@ -1382,7 +1383,11 @@ function foldNodes(nodes) {
 
 // ---------------------------------------------------------------- templates: rendering
 
-/** The page being written, grown by every op in order: V8's own rope of it, flattened once where it is read. */
+/**
+ * The page being written, grown by every op in order: V8's own rope of it, flattened once where it is read. An array
+ * of the ops' texts joined instead was measured and is slower: the rope costs a cell an op and one flatten, and a join
+ * costs a store a slot, its own length pass, and the same copy.
+ */
 let OUT = '';
 
 /** A value as text: a string itself, a number in JavaScript's digits, true or false, an array's items by ", ". */
@@ -1754,9 +1759,10 @@ export function run(input) {
   const nTags = tagList.length;
 
   // 8. Every page through its layout, the index pages, the tag pages and the tags page through theirs.
-  // The tree is a dictionary from the start: a build writes hundreds of paths into it, and every one of them would
-  // otherwise be a shape of its own on the way there.
-  const output = { __proto__: null };
+  // The tree is an ordinary object, makefun-site's own `{}`: it keeps a shape V8's JSON writer has a fast path for,
+  // where a dictionary from the start costs that path every page it writes, and it answers a path named __proto__ as
+  // makefun-site does, by assigning nothing.
+  const output = {};
   const allTags = new Array(nTags);
   for (let i = 0; i < nTags; i++) {
     const t = tagList[i];

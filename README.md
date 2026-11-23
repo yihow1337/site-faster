@@ -44,15 +44,25 @@ be identical, so the work has to be the same work — only less of it:
   where NFKD is the identity and no combining mark can appear.
 - **Values live in shapes, not in objects built by spread.** One scope object shape, one node shape, a scope's names as
   small integers, and the values every template sees in a seven-slot array, so every lookup is monomorphic.
+- **An answer becomes bytes once.** Writing one 7 MB string of every answer costs a second copy of all of it to flatten
+  and a third to encode, so the driver never builds one: each file's path and text is turned to JSON on its own and
+  encoded straight into the bytes of its answer, which go to the file as the answer is finished. Every file's text is
+  dropped from the answer the moment it is in those bytes, so what a page was built out of dies with it and a case's
+  collector carries a shrinking tree rather than the whole of it. The bytes are `JSON.stringify(answers)`' own, path
+  for path and separator for separator.
+- **The output tree is an ordinary object.** `{}`, which is also makefun-site's own: it keeps the shape V8's JSON
+  writer has a fast path for, where a tree made a dictionary up front costs that path once a page, and it answers a
+  path named `__proto__` the way makefun-site does.
 - **V8 is told the truth about the run.** One set is one pass over 3 sites: `--maglev --no-turbofan` keeps the compiler
   that pays for itself in that pass and drops the one that does not, and `--no-incremental-marking` is the house
-  baseline's own. The driver turns each answer to text as soon as it is answered and lets the case go, so a run never
-  holds every site's output tree at once.
+  baseline's own. Everything else was tried and measured against those three — eager tiering, a single-threaded heap,
+  the young generation's other collector, a bigger semi-space — and none of it earns its place.
 
 Measured here against the house baseline on the practice instance — 3 sites, 1,070 Markdown sources, 1,135 output
-files, 7.4 MB of text — both timed the same way on the same machine: **0.28 s of CPU against 0.66 s**, about 2.4× less,
-or 2.7× less once a do-nothing program in the same runtime (0.056 s) is taken off both. The `answers.json` it writes
-is the baseline's byte for byte.
+files, 7.4 MB of text — both timed the same way on the same machine, pinned to one CPU and run one after the other in
+rotation so a busy minute falls on both alike, the trimmed mean of 13 runs each: **0.24 s of CPU against 0.68 s**,
+about 2.8× less, or 3.0× less once a do-nothing program in the same runtime (0.018 s) is taken off both. The
+`answers.json` it writes is the baseline's byte for byte.
 
 Answers are identical on the practice instance, on 21 more instances drawn from the kit's own generator on other
 seeds, on 75,000 randomly built sites, and on the 181 hand-written cases in
