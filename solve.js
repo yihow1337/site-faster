@@ -462,6 +462,11 @@ INL[96] = 3;
 INL[42] = 4;
 INL[91] = 5;
 
+// The scan that finds the next of those characters. A call into the regexp engine was measured against a loop over
+// the table and a run of plain text costs about a fifth as much here: the engine reads a character where a loop reads
+// it, tests it against the table and branches on it, and inline text holds one about every fortieth character.
+const INL_FIND = /[&<>"'\\`*[]/g;
+
 // The characters a backslash escapes: \ ` * _ [ ] ( ) # + - . ! >
 const ESCAPABLE = new Uint8Array(65536);
 for (const c of [92, 96, 42, 95, 91, 93, 40, 41, 35, 43, 45, 46, 33, 62]) ESCAPABLE[c] = 1;
@@ -553,13 +558,15 @@ function inlineRange(s, a, b) {
   let out = '';
   let last = a;
   let i = a;
-  while (i < b) {
+  for (;;) {
+    // The next character that opens something, found by the engine rather than a character at a time. A hit past the
+    // end of the range ends the scan: it belongs to whatever this range is a part of, not to this one.
+    INL_FIND.lastIndex = i;
+    if (!INL_FIND.test(s)) break;
+    i = INL_FIND.lastIndex - 1;
+    if (i >= b) break;
     const c = s.charCodeAt(i);
     const kind = INL[c];
-    if (kind === 0) {
-      i++;
-      continue;
-    }
     if (i > last) out += s.slice(last, i);
     if (kind === 1) {
       out += ESC_TEXT[ESC_CODE[c]];
@@ -1384,9 +1391,11 @@ function foldNodes(nodes) {
 // ---------------------------------------------------------------- templates: rendering
 
 /**
- * The page being written, grown by every op in order: V8's own rope of it, flattened once where it is read. An array
- * of the ops' texts joined instead was measured and is slower: the rope costs a cell an op and one flatten, and a join
- * costs a store a slot, its own length pass, and the same copy.
+ * The page being written, grown by every op in order: V8's own rope of it, flattened once where it is read. Three
+ * other shapes were measured against it on this build and every one costs more: an array of the ops' texts joined per
+ * page, the page written as UTF-8 into one scratch buffer and read back from it with utf8Slice, and the whole answer
+ * written as the bytes of its JSON with each file's text read back out of it. Holding a page as a rope of the pieces
+ * already in hand and letting one flatten copy them is the least a page's text can cost.
  */
 let OUT = '';
 
@@ -1473,6 +1482,8 @@ function renderOps(ops, scope, depth) {
         const len = xs.length;
         const nid = op.nid;
         const body = op.a;
+        // A scope and a loop made for each element, not one pair written again: neither outlives the call it is made
+        // for, and one made here and left here is the cheaper of the two (measured both ways on this build).
         for (let j = 0; j < len; j++) {
           renderOps(body, { k: 1, nid, v: xs[j], l: { index: j + 1, first: j === 0, last: j === len - 1, length: len }, p: scope }, depth);
         }
